@@ -9,8 +9,8 @@ environment:
   type: "openenv_space"
   runtime: "fastapi"
   app: "server.app:app"
-  port: 8000
-  base_url: "http://127.0.0.1:8000"
+  port: 7860
+  base_url: "http://127.0.0.1:7860"
   max_steps: 1
   seed: 42
   dataset:
