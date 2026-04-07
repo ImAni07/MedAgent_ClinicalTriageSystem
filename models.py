@@ -65,6 +65,8 @@ class MedAgentState(State):
 
     age: int | None = Field(default=None, ge=0)
     symptoms: list[str] = Field(default_factory=list)
+    task_id: str | None = Field(default=None)
+    task_description: str | None = Field(default=None)
     expected_disease: str | None = Field(default=None)
     target_risk: RiskLevel | None = Field(default=None)
     target_decision: DecisionType | None = Field(default=None)

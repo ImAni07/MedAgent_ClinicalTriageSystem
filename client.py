@@ -70,6 +70,8 @@ class MedAgentEnv(EnvClient[MedAgentAction, MedAgentObservation, MedAgentState])
             step_count=payload.get("step_count", 0),
             age=payload.get("age"),
             symptoms=payload.get("symptoms", []),
+            task_id=payload.get("task_id"),
+            task_description=payload.get("task_description"),
             expected_disease=payload.get("expected_disease"),
             target_risk=payload.get("target_risk"),
             target_decision=payload.get("target_decision"),

@@ -25,6 +25,11 @@ BENCHMARK = "medagent"
 EPISODE_SEED = int(os.getenv("MEDAGENT_SEED", "42"))
 MAX_STEPS = max(1, int(os.getenv("MEDAGENT_MAX_STEPS", "1")))
 SUCCESS_SCORE_THRESHOLD = float(os.getenv("MEDAGENT_SUCCESS_SCORE_THRESHOLD", "0.7"))
+TASK_RUNS = [
+    {"task_name": "clinical-triage-easy", "task_id": "easy", "seed": EPISODE_SEED},
+    {"task_name": "clinical-triage-medium", "task_id": "medium", "seed": EPISODE_SEED + 11},
+    {"task_name": "clinical-triage-hard", "task_id": "hard", "seed": EPISODE_SEED + 23},
+]
 
 API_BASE_URL = os.getenv("API_BASE_URL", "").strip()
 MODEL_NAME = os.getenv("MODEL_NAME", "").strip()
@@ -312,58 +317,63 @@ def action_to_json(action: MedAgentAction) -> str:
         separators=(",", ":"),
     )
 
-def main() -> int:
-    
-    model_label = configured_model_name() if API_BASE_URL and API_KEY else "rule-based-fallback"
-    rewards: list[float] = []
-    steps_taken = 0
-    score = 0.0
-    success = False
-    env: Any = None
+def to_strict_score(raw_reward: float) -> float:
+    return round(min(0.99, max(0.01, raw_reward)), 3)
 
-    log_start(task=TASK_NAME, env=BENCHMARK, model=model_label)
+def main() -> int:
+    model_label = configured_model_name() if API_BASE_URL and API_KEY else "rule-based-fallback"
+    env: Any = None
 
     try:
         warm_up_proxy()
-        
         env = create_env()
-        reset_result = env.reset(seed=EPISODE_SEED)
-        observation = reset_result.observation
+        overall_success = True
 
-        for step in range(1, MAX_STEPS + 1):
-            
-            if reset_result.done and step == 1:
-                break
+        for task_run in TASK_RUNS:
+            rewards: list[float] = []
+            steps_taken = 0
+            score = 0.01
+            success = False
 
-            action = llm_action(observation.age, observation.symptoms)
-            step_result = env.step(action)
-            reward = round(float(step_result.reward or 0.0), 2)
-            rewards.append(reward)
-            steps_taken = step
+            log_start(task=task_run["task_name"], env=BENCHMARK, model=model_label)
+            reset_result = env.reset(seed=task_run["seed"], task_id=task_run["task_id"])
+            observation = reset_result.observation
 
-            log_step(
-                step=step,
-                action=action_to_json(action),
-                reward=reward,
-                done=bool(step_result.done),
-                error=None,
-            )
+            for step in range(1, MAX_STEPS + 1):
+                if reset_result.done and step == 1:
+                    break
 
-            observation = step_result.observation
-            
-            if step_result.done:
-                break
+                action = llm_action(observation.age, observation.symptoms)
+                step_result = env.step(action)
+                reward = round(float(step_result.reward or 0.0), 2)
+                rewards.append(reward)
+                steps_taken = step
 
-        score = min(max(sum(rewards), 0.0), 1.0)
-        success = score >= SUCCESS_SCORE_THRESHOLD
+                log_step(
+                    step=step,
+                    action=action_to_json(action),
+                    reward=reward,
+                    done=bool(step_result.done),
+                    error=None,
+                )
+
+                observation = step_result.observation
+                if step_result.done:
+                    break
+
+            score = to_strict_score(sum(rewards))
+            success = score >= SUCCESS_SCORE_THRESHOLD
+            overall_success = overall_success and success
+            log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
+
+        return 0
 
     except Exception as exc:
-        
         error_text = safe_error(exc)
         fallback = fallback_action(40, ["fever"])
-        
-        if steps_taken == 0:
-            steps_taken = 1
+
+        for task_run in TASK_RUNS:
+            log_start(task=task_run["task_name"], env=BENCHMARK, model=model_label)
             log_step(
                 step=1,
                 action=action_to_json(fallback),
@@ -371,20 +381,15 @@ def main() -> int:
                 done=True,
                 error=error_text,
             )
+            log_end(success=False, steps=1, score=0.01, rewards=[0.0])
+        return 0
 
     finally:
-        
         if env is not None:
-            
             try:
                 env.close()
-            
             except Exception:
                 pass
-        
-        log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
-
-    return 0
 
 if __name__ == "__main__":
     
@@ -395,15 +400,16 @@ if __name__ == "__main__":
         raise
     
     except Exception:
-        
-        log_start(task=TASK_NAME, env=BENCHMARK, model=configured_model_name() if API_BASE_URL and API_KEY else "rule-based-fallback")
         fallback = fallback_action(40, ["fever"])
-        log_step(
-            step=1,
-            action=action_to_json(fallback),
-            reward=0.0,
-            done=True,
-            error=safe_error("unexpected_top_level_failure"),
-        )
-        log_end(success=False, steps=1, score=0.0, rewards=[])
+        model_label = configured_model_name() if API_BASE_URL and API_KEY else "rule-based-fallback"
+        for task_run in TASK_RUNS:
+            log_start(task=task_run["task_name"], env=BENCHMARK, model=model_label)
+            log_step(
+                step=1,
+                action=action_to_json(fallback),
+                reward=0.0,
+                done=True,
+                error=safe_error("unexpected_top_level_failure"),
+            )
+            log_end(success=False, steps=1, score=0.01, rewards=[0.0])
         raise SystemExit(0)

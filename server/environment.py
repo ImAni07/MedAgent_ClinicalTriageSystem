@@ -1,4 +1,4 @@
-# environment.py
+﻿# environment.py
 
 # Code for the MedAgentEnvironment, a clinical triage environment using the MedQuad dataset.
 
@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 from uuid import uuid4
 from datasets import Dataset, DownloadConfig, IterableDataset, load_dataset
+from openenv.core.env_server.types import EnvironmentMetadata
 from openenv.core.env_server.interfaces import Environment
 
 try:
@@ -148,6 +149,33 @@ DEFAULT_DISEASE_SYMPTOMS: dict[str, list[str]] = {
     "migraine": ["headache", "nausea", "dizziness"],
 }
 
+TASK_PROFILES: dict[str, dict[str, Any]] = {
+    "easy": {
+        "name": "clinical-triage-easy",
+        "description": "Low-complexity adult triage with common non-emergency symptoms.",
+        "diseases": {"gastroenteritis", "influenza", "migraine"},
+        "preferred_risks": {"low", "medium"},
+        "age_range": (18, 55),
+        "symptom_count": (2, 2),
+    },
+    "medium": {
+        "name": "clinical-triage-medium",
+        "description": "Mixed outpatient triage with broader ages and moderate symptom ambiguity.",
+        "diseases": {"gastroenteritis", "influenza", "migraine"},
+        "preferred_risks": {"medium"},
+        "age_range": (12, 75),
+        "symptom_count": (2, 3),
+    },
+    "hard": {
+        "name": "clinical-triage-hard",
+        "description": "Higher-risk triage that stresses escalation decisions for urgent cases.",
+        "diseases": {"angina", "influenza"},
+        "preferred_risks": {"high", "medium"},
+        "age_range": (45, 90),
+        "symptom_count": (2, 3),
+    },
+}
+
 # RL Environment
 class MedAgentEnvironment(Environment[MedAgentAction, MedAgentObservation, MedAgentState]):
     
@@ -179,6 +207,7 @@ class MedAgentEnvironment(Environment[MedAgentAction, MedAgentObservation, MedAg
         self.symptom_to_disease: dict[str, str] = knowledge["symptom_to_disease"]
         self._rng = random.Random()
         self._done = False
+        self._task_id = "medium"
         self._state = MedAgentState(episode_id=str(uuid4()), step_count=0)
 
     @classmethod
@@ -465,6 +494,17 @@ class MedAgentEnvironment(Environment[MedAgentAction, MedAgentObservation, MedAg
     def _normalize_whitespace(text: str) -> str:
         return re.sub(r"\s+", " ", text).strip()
 
+    def get_metadata(self) -> EnvironmentMetadata:
+        return EnvironmentMetadata(
+            name="MedAgentEnvironment",
+            description=(
+                "Clinical triage environment with three built-in graded tasks: "
+                "easy, medium, and hard."
+            ),
+            version="1.0.0",
+            author="Anirban Majumder",
+        )
+
     # Start new episode
     def reset(
         self,
@@ -472,15 +512,18 @@ class MedAgentEnvironment(Environment[MedAgentAction, MedAgentObservation, MedAg
         episode_id: str | None = None,
         **kwargs: Any,
     ) -> MedAgentObservation:
-        
-        del kwargs
-        
         self._reset_rubric()
         
         if seed is not None:
             self._rng.seed(seed)
 
-        patient_case = self._sample_patient_case()
+        task_id = str(kwargs.get("task_id") or kwargs.get("task") or "medium").lower()
+        if task_id not in TASK_PROFILES:
+            task_id = "medium"
+
+        self._task_id = task_id
+        profile = TASK_PROFILES[task_id]
+        patient_case = self._sample_patient_case(task_id)
         self._done = False
         
         self._state = MedAgentState(
@@ -488,6 +531,8 @@ class MedAgentEnvironment(Environment[MedAgentAction, MedAgentObservation, MedAg
             step_count=0,
             age=patient_case["age"],
             symptoms=patient_case["symptoms"],
+            task_id=task_id,
+            task_description=profile["description"],
             expected_disease=patient_case["expected_disease"],
             target_risk=patient_case["target_risk"],
             target_decision=patient_case["target_decision"],
@@ -498,10 +543,18 @@ class MedAgentEnvironment(Environment[MedAgentAction, MedAgentObservation, MedAg
             age=patient_case["age"],
             symptoms=patient_case["symptoms"],
             predicted_disease=None,
-            feedback="Assess the patient risk level and recommend the next care decision.",
+            feedback=(
+                f"Task: {profile['name']}. {profile['description']} "
+                "Assess the patient risk level and recommend the next care decision."
+            ),
             done=False,
             reward=0.0,
-            metadata={"episode_id": self._state.episode_id},
+            metadata={
+                "episode_id": self._state.episode_id,
+                "task_id": task_id,
+                "task_name": profile["name"],
+                "task_description": profile["description"],
+            },
         )
 
     # Evaluate agent action and return reward and feedback
@@ -521,7 +574,11 @@ class MedAgentEnvironment(Environment[MedAgentAction, MedAgentObservation, MedAg
                 feedback="Episode already completed. Call reset() for a new patient.",
                 done=True,
                 reward=0.0,
-                metadata={"episode_id": self._state.episode_id, "repeated_step": True},
+                metadata={
+                    "episode_id": self._state.episode_id,
+                    "repeated_step": True,
+                    "task_id": self._state.task_id,
+                },
             )
 
         reward, feedback = self._score_action(action)
@@ -538,6 +595,7 @@ class MedAgentEnvironment(Environment[MedAgentAction, MedAgentObservation, MedAg
             reward=reward,
             metadata={
                 "episode_id": self._state.episode_id,
+                "task_id": self._state.task_id,
                 "target_risk": self._state.target_risk,
                 "target_decision": self._state.target_decision,
             },
@@ -549,16 +607,34 @@ class MedAgentEnvironment(Environment[MedAgentAction, MedAgentObservation, MedAg
         return self._state
 
     # Generate synthetic patient case using disease-symptom mapping
-    def _sample_patient_case(self) -> dict[str, Any]:
-        
-        diseases = sorted(self.disease_to_symptoms)
-        disease = self._rng.choice(diseases)
-        symptom_pool = self.disease_to_symptoms[disease]
-        max_symptoms = min(len(symptom_pool), 3)
-        symptom_count = 2 if max_symptoms == 2 else self._rng.randint(2, max_symptoms)
-        symptoms = sorted(self._rng.sample(symptom_pool, k=symptom_count))
-        age = self._rng.randint(5, 90)
-        target_risk = self._derive_risk(symptoms, age)
+    def _sample_patient_case(self, task_id: str = "medium") -> dict[str, Any]:
+        profile = TASK_PROFILES.get(task_id, TASK_PROFILES["medium"])
+        diseases = [
+            disease
+            for disease in sorted(self.disease_to_symptoms)
+            if disease in profile["diseases"]
+        ] or sorted(self.disease_to_symptoms)
+
+        for _ in range(20):
+            disease = self._rng.choice(diseases)
+            symptom_pool = self.disease_to_symptoms[disease]
+            min_count, max_count = profile["symptom_count"]
+            max_symptoms = min(len(symptom_pool), max_count)
+            symptom_count = min_count if max_symptoms == min_count else self._rng.randint(min_count, max_symptoms)
+            symptoms = sorted(self._rng.sample(symptom_pool, k=symptom_count))
+            min_age, max_age = profile["age_range"]
+            age = self._rng.randint(min_age, max_age)
+            target_risk = self._derive_risk(symptoms, age)
+            if target_risk in profile["preferred_risks"]:
+                break
+        else:
+            disease = diseases[0]
+            symptom_pool = self.disease_to_symptoms[disease]
+            symptom_count = min(len(symptom_pool), profile["symptom_count"][0])
+            symptoms = sorted(symptom_pool[:symptom_count])
+            min_age, max_age = profile["age_range"]
+            age = min_age
+            target_risk = self._derive_risk(symptoms, age)
         
         return {
             "age": age,
