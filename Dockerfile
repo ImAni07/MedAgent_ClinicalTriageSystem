@@ -30,9 +30,9 @@ RUN chmod +x start.sh
 
 RUN mkdir -p /app/artifacts/logs /app/artifacts/models /app/artifacts/reports
 
-EXPOSE 8000
+EXPOSE 7860
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -fsS http://127.0.0.1:8000/health || exit 1
+    CMD curl -fsS http://127.0.0.1:${PORT}/health || exit 1
 
-CMD ["bash", "start.sh"]
+CMD ["sh", "-c", "uvicorn server.app:app --host 0.0.0.0 --port ${PORT}"]
