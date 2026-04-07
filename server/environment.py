@@ -1,20 +1,21 @@
-﻿# environment.py
+# environment.py
 
 # Code for the MedAgentEnvironment, a clinical triage environment using the MedQuad dataset.
 
 # Import Requirements
-
 from __future__ import annotations
+import os
 import random
 import re
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, ClassVar
 from uuid import uuid4
-from datasets import Dataset, IterableDataset, load_dataset
+from datasets import Dataset, DownloadConfig, IterableDataset, load_dataset
 from openenv.core.env_server.interfaces import Environment
 
 try:
+    
     from ..models import (
         DecisionType,
         MedAgentAction,
@@ -24,6 +25,7 @@ try:
     )
 
 except ImportError:
+    
     from models import (
         DecisionType,
         MedAgentAction,
@@ -41,6 +43,9 @@ DATASET_SPLIT = "train"
 
 # Parsing limits for faster execution
 MAX_PARSED_DISEASES = 250
+
+ALLOW_REMOTE_DATASET = os.getenv("MEDAGENT_ALLOW_REMOTE_DATASET", "0") == "1"
+USE_MEDQUAD_DATASET = os.getenv("MEDAGENT_USE_DATASET", "0") == "1"
 
 QUESTION_PATTERNS = (
     re.compile(r"what are the symptoms of (?P<disease>.+?)\s*\?*$", re.IGNORECASE),
@@ -158,8 +163,17 @@ class MedAgentEnvironment(Environment[MedAgentAction, MedAgentObservation, MedAg
 
     def __init__(self):
         super().__init__()
-        self.dataset = self._load_medquad_dataset()
-        knowledge = self._load_knowledge_base()
+        
+        if USE_MEDQUAD_DATASET:
+        
+            self.dataset = self._load_medquad_dataset()
+            knowledge = self._load_knowledge_base()
+        
+        else:
+        
+            self.dataset = []
+            knowledge = self._default_knowledge_base()
+        
         self.disease_to_symptoms: dict[str, list[str]] = knowledge["disease_to_symptoms"]
         self.symptom_to_diseases: dict[str, list[str]] = knowledge["symptom_to_diseases"]
         self.symptom_to_disease: dict[str, str] = knowledge["symptom_to_disease"]
@@ -171,7 +185,7 @@ class MedAgentEnvironment(Environment[MedAgentAction, MedAgentObservation, MedAg
     
     # Load MedQuad dataset with streaming for efficiency
     
-    def _load_medquad_dataset(cls) -> Dataset | IterableDataset:
+    def _load_medquad_dataset(cls) -> Dataset | IterableDataset | list[dict[str, Any]]:
         
         """
         Load the MedQuad dataset once, with a cached CSV fallback for offline runs.
@@ -185,6 +199,7 @@ class MedAgentEnvironment(Environment[MedAgentAction, MedAgentObservation, MedAg
         if csv_path is not None:
             
             try:
+                
                 dataset = load_dataset(
                     "csv",
                     data_files=str(csv_path),
@@ -193,17 +208,42 @@ class MedAgentEnvironment(Environment[MedAgentAction, MedAgentObservation, MedAg
                 )
             
             except Exception:
-                dataset = load_dataset(DATASET_REPO_ID, split=DATASET_SPLIT, streaming=True)
+                
+                dataset = load_dataset(
+                    DATASET_REPO_ID,
+                    split=DATASET_SPLIT,
+                    streaming=True,
+                    download_config=DownloadConfig(local_files_only=True),
+                )
         
         else:
             
             try:
-                dataset = load_dataset(DATASET_REPO_ID, split=DATASET_SPLIT, streaming=True)
+                
+                dataset = load_dataset(
+                    DATASET_REPO_ID,
+                    split=DATASET_SPLIT,
+                    streaming=True,
+                    download_config=DownloadConfig(local_files_only=True),
+                )
             
             except Exception:
-                raise RuntimeError(
-                    "Unable to load MedQuad dataset from Hugging Face or local cache."
-                )
+                
+                if ALLOW_REMOTE_DATASET:
+                    
+                    try:
+                        
+                        dataset = load_dataset(
+                            DATASET_REPO_ID,
+                            split=DATASET_SPLIT,
+                            streaming=True,
+                        )
+                    
+                    except Exception:
+                        dataset = []
+                
+                else:
+                    dataset = []
 
         cls._dataset_cache = dataset
         
@@ -254,6 +294,7 @@ class MedAgentEnvironment(Environment[MedAgentAction, MedAgentObservation, MedAg
                 continue
 
             for symptom in symptoms:
+                
                 disease_to_symptoms[disease].add(symptom)
                 symptom_counts[symptom][disease] += 1
 
@@ -291,6 +332,36 @@ class MedAgentEnvironment(Environment[MedAgentAction, MedAgentObservation, MedAg
         cls._knowledge_cache = {
             "disease_to_symptoms": normalized_diseases,
             "symptom_to_diseases": symptom_to_diseases,
+            "symptom_to_disease": symptom_to_disease,
+        }
+        
+        return cls._knowledge_cache
+
+    @classmethod
+    def _default_knowledge_base(cls) -> dict[str, Any]:
+        
+        if cls._knowledge_cache is not None:
+            return cls._knowledge_cache
+
+        symptom_to_diseases: dict[str, list[str]] = defaultdict(list)
+        symptom_to_disease: dict[str, str] = {}
+
+        for disease, symptoms in DEFAULT_DISEASE_SYMPTOMS.items():
+            
+            for symptom in symptoms:
+                
+                symptom_to_diseases[symptom].append(disease)
+                symptom_to_disease[symptom] = disease
+
+        cls._knowledge_cache = {
+            "disease_to_symptoms": {
+                disease: sorted(symptoms)
+                for disease, symptoms in DEFAULT_DISEASE_SYMPTOMS.items()
+            },
+            "symptom_to_diseases": {
+                symptom: sorted(diseases)
+                for symptom, diseases in symptom_to_diseases.items()
+            },
             "symptom_to_disease": symptom_to_disease,
         }
         
@@ -343,6 +414,7 @@ class MedAgentEnvironment(Environment[MedAgentAction, MedAgentObservation, MedAg
             normalized = cls._normalize_symptom(candidate)
             
             if normalized and normalized not in seen:
+                
                 seen.add(normalized)
                 unique_candidates.append(normalized)
 
