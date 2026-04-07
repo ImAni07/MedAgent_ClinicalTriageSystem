@@ -139,7 +139,7 @@ python -m server.app
 
 The FastAPI docs should then be available at:
 
-- `http://127.0.0.1:8000/docs`
+- `http://127.0.0.1:7860/docs`
 
 ### 3. Run inference
 
