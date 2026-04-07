@@ -2,7 +2,6 @@
 
 # FastAPI application for the MedAgent clinical triage environment.
 
-
 try:
     
     # Import OpenEnv helper to automatically create a FastAPI server for our environment
@@ -23,6 +22,7 @@ try:
 
 # Error Handling
 except ImportError:
+    
     from models import MedAgentAction, MedAgentObservation
     from server.environment import MedAgentEnvironment
 
@@ -37,26 +37,22 @@ app = create_app(
 
 from fastapi.responses import RedirectResponse
 
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}
+
 @app.get("/")
 
 def root ():
     return RedirectResponse(url="/docs")
 
 # Run FastAPI server using Uvicorn
-def main(host: str = "0.0.0.0", port: int = 8000) -> None:
+def main(host: str = "0.0.0.0", port: int = 7860) -> None:
     
     # Import Uvicorn for running the ASGI server
     import uvicorn
 
     uvicorn.run(app, host=host, port=port)
 
-# Import OpenEnv helper to automatically create FastAPI server for the environment
 if __name__ == "__main__":
-    
-    # Import argparse for command-line argument parsing
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--port", type=int, default=8000)
-    args = parser.parse_args()
-    main(port=args.port)
+    main()
