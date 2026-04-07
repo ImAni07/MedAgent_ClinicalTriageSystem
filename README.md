@@ -150,10 +150,9 @@ python inference.py
 ### Required environment variables
 
 Set these before running inference:
-
 - `API_BASE_URL`
 - `MODEL_NAME`
-- `HF_TOKEN` or another compatible API key such as `OPENAI_API_KEY` or `API_KEY`
+- `API_KEY`
 
 Optional environment variables:
 
