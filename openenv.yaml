@@ -1,0 +1,18 @@
+spec_version: 1
+name: medagent
+type: space
+
+# Runtime configuration
+runtime: fastapi
+app: server.app:app
+port: 8000
+
+# Metadata
+description: "AI-powered clinical triage environment using MedQuad and LLM-based decision making"
+author: "Anirban Majumder"
+tags:
+  - healthcare
+  - reinforcement-learning
+  - llm
+  - clinical-ai
+  - openenv

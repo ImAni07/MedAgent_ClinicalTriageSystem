@@ -1,0 +1,66 @@
+runtime:
+  # Current values taken from the existing inference/environment code
+  episode_seed: 42
+  max_steps: 1
+  connect_timeout_s: 10.0
+  message_timeout_s: 60.0
+  temperature: 0.2
+  max_tokens: 200
+  success_score_threshold: 0.7
+
+triage_policy:
+  # Current fallback policy taken from inference.py
+  default_invalid_risk_level: "medium"
+  default_invalid_decision: "book_consult"
+  high_markers:
+    - "chest pain"
+    - "shortness of breath"
+    - "difficulty breathing"
+    - "seizure"
+    - "seizures"
+    - "confusion"
+    - "paralysis"
+    - "bleeding"
+  medium_markers:
+    - "fever"
+    - "abdominal pain"
+    - "vomiting"
+    - "cough"
+    - "dizziness"
+    - "weakness"
+    - "rash"
+
+reward_shaping:
+  # Current reward logic derived from server/environment.py
+  exact_match_reward: 1.0
+  exact_risk_partial: 0.6
+  adjacent_risk_partial: 0.3
+  exact_decision_partial: 0.4
+  adjacent_decision_partial: 0.2
+  unsafe_undertriage_cap: 0.1
+
+future_rl_placeholders:
+  # Placeholder defaults for future training work.
+  # These are NOT active repo values today.
+  enabled: false
+  algorithm: "ppo"
+  learning_rate: 0.0003
+  batch_size: 64
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  ent_coef: 0.01
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  n_steps: 256
+  total_timesteps: 100000
+  eval_episodes: 100
+
+future_exploration_placeholders:
+  # Placeholder defaults for future training work.
+  # These are NOT active repo values today.
+  enabled: false
+  strategy: "epsilon_greedy"
+  epsilon_start: 1.0
+  epsilon_end: 0.05
+  epsilon_decay_steps: 25000

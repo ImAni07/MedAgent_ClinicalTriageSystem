@@ -1,0 +1,74 @@
+project:
+  name: "MedAgent"
+  version: "1.0.0"
+  description: "Clinical triage AI environment using MedQuad dataset and LLM-based decision agent."
+  benchmark: "medagent"
+
+environment:
+  id: "medagent"
+  type: "openenv_space"
+  runtime: "fastapi"
+  app: "server.app:app"
+  port: 8000
+  base_url: "http://127.0.0.1:8000"
+  max_steps: 1
+  seed: 42
+  dataset:
+    repo_id: "keivalya/MedQuad-MedicalQnADataset"
+    split: "train"
+    max_parsed_diseases: 250
+  observation_fields:
+    - "age"
+    - "symptoms"
+  action_fields:
+    - "risk_level"
+    - "decision"
+
+agents:
+  - name: "Clinical_Triage_Agent"
+    provider: "openai_compatible"
+    model: "Qwen/Qwen2.5-72B-Instruct"
+    role: "Generates risk level and triage decision from patient age and symptoms."
+  - name: "Fallback_Triage_Policy"
+    provider: "local"
+    model: "rule_based"
+    role: "Provides deterministic triage when model output is invalid."
+
+inference:
+  api_base_url_env: "API_BASE_URL"
+  model_name_env: "MODEL_NAME"
+  primary_api_key_env: "HF_TOKEN"
+  alternate_api_key_envs:
+    - "OPENAI_API_KEY"
+    - "API_KEY"
+  image_name_envs:
+    - "IMAGE_NAME"
+    - "LOCAL_IMAGE_NAME"
+  env_base_url_env: "ENV_BASE_URL"
+  temperature: 0.2
+  max_tokens: 200
+  success_score_threshold: 0.7
+
+artifacts:
+  logs_dir: "./artifacts/logs"
+  models_dir: "./artifacts/models"
+  reports_dir: "./artifacts/reports"
+
+deployment:
+  openenv_manifest: "./openenv.yaml"
+  dockerfile: "./Dockerfile"
+  readme: "./README.md"
+  inference_script: "./inference.py"
+  huggingface_space_repo_id: "<your-hf-username>/medagent"
+  github_repo: "<your-github-username>/medagent"
+
+params:
+  file: "./params.yaml"
+
+logging:
+  structured_stdout: true
+  required_formats:
+    - "START"
+    - "STEP"
+    - "END"
+  save_local_copy: false
