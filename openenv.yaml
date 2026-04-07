@@ -5,7 +5,7 @@ type: space
 # Runtime configuration
 runtime: fastapi
 app: server.app:app
-port: 8000
+port: 7860
 
 # Metadata
 description: "AI-powered clinical triage environment using MedQuad and LLM-based decision making"
