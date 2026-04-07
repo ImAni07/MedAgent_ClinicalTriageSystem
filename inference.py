@@ -42,6 +42,9 @@ VALID_DECISIONS = {
     "seek_emergency_care",
 }
 
+def configured_model_name() -> str:
+    return MODEL_NAME or "gpt-4o-mini"
+
 def log_start(task: str, env: str, model: str) -> None:
     print(f"[START] task={task} env={env} model={model}", flush=True)
 
@@ -214,7 +217,7 @@ def llm_action(age: int, symptoms: list[str]) -> MedAgentAction:
         return fallback
 
     try:
-        model_name = MODEL_NAME or "gpt-4o-mini"
+        model_name = configured_model_name()
         
         client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY, timeout=20.0)
         
@@ -239,6 +242,35 @@ def llm_action(age: int, symptoms: list[str]) -> MedAgentAction:
     
     except Exception:
         return fallback
+
+def warm_up_proxy() -> None:
+    
+    if not (API_BASE_URL and API_KEY):
+        return
+
+    try:
+        client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY, timeout=20.0)
+        client.chat.completions.create(
+            model=configured_model_name(),
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Respond with JSON only.",
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        'Return exactly this JSON: '
+                        '{"risk_level":"low","decision":"monitor_at_home"}'
+                    ),
+                },
+            ],
+            temperature=0.0,
+            max_tokens=40,
+        )
+    except Exception:
+        # Keep inference resilient; the real action step will still fall back safely.
+        pass
 
 
 def create_env() -> Any:
@@ -282,7 +314,7 @@ def action_to_json(action: MedAgentAction) -> str:
 
 def main() -> int:
     
-    model_label = MODEL_NAME or ("gpt-4o-mini" if API_BASE_URL and API_KEY else "rule-based-fallback")
+    model_label = configured_model_name() if API_BASE_URL and API_KEY else "rule-based-fallback"
     rewards: list[float] = []
     steps_taken = 0
     score = 0.0
@@ -292,6 +324,7 @@ def main() -> int:
     log_start(task=TASK_NAME, env=BENCHMARK, model=model_label)
 
     try:
+        warm_up_proxy()
         
         env = create_env()
         reset_result = env.reset(seed=EPISODE_SEED)
@@ -363,7 +396,7 @@ if __name__ == "__main__":
     
     except Exception:
         
-        log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME or "rule-based-fallback")
+        log_start(task=TASK_NAME, env=BENCHMARK, model=configured_model_name() if API_BASE_URL and API_KEY else "rule-based-fallback")
         fallback = fallback_action(40, ["fever"])
         log_step(
             step=1,
