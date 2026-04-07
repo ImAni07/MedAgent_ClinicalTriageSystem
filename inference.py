@@ -28,12 +28,7 @@ SUCCESS_SCORE_THRESHOLD = float(os.getenv("MEDAGENT_SUCCESS_SCORE_THRESHOLD", "0
 
 API_BASE_URL = os.getenv("API_BASE_URL", "").strip()
 MODEL_NAME = os.getenv("MODEL_NAME", "").strip()
-
-API_KEY = (
-    os.getenv("HF_TOKEN", "").strip()
-    or os.getenv("OPENAI_API_KEY", "").strip()
-    or os.getenv("API_KEY", "").strip()
-)
+API_KEY = os.getenv("API_KEY", "").strip()
 
 IMAGE_NAME = os.getenv("IMAGE_NAME", "").strip() or os.getenv("LOCAL_IMAGE_NAME", "").strip()
 ENV_BASE_URL = os.getenv("ENV_BASE_URL", "").strip()
@@ -215,15 +210,16 @@ def llm_action(age: int, symptoms: list[str]) -> MedAgentAction:
     
     fallback = fallback_action(age, symptoms)
 
-    if not (API_BASE_URL and MODEL_NAME and API_KEY):
+    if not (API_BASE_URL and API_KEY):
         return fallback
 
     try:
+        model_name = MODEL_NAME or "gpt-4o-mini"
         
         client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY, timeout=20.0)
         
         completion = client.chat.completions.create(
-            model=MODEL_NAME,
+            model=model_name,
             messages=[
                 {
                     "role": "system",
@@ -286,7 +282,7 @@ def action_to_json(action: MedAgentAction) -> str:
 
 def main() -> int:
     
-    model_label = MODEL_NAME or "rule-based-fallback"
+    model_label = MODEL_NAME or ("gpt-4o-mini" if API_BASE_URL and API_KEY else "rule-based-fallback")
     rewards: list[float] = []
     steps_taken = 0
     score = 0.0
