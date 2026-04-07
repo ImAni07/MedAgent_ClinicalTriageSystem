@@ -1,0 +1,24 @@
+[project]
+name = "medagent"
+version = "1.0.0"
+description = "AI Clinical Decision Support System using OpenEnv and MedQuad dataset"
+authors = [
+    { name = "Anirban Majumder" }
+]
+readme = "README.md"
+requires-python = ">=3.10"
+
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "openenv-core",
+    "pydantic",
+    "datasets",
+    "huggingface_hub",
+    "httpx",
+    "PyYAML",
+    "websockets"
+]
+
+[tool.setuptools]
+packages = ["server"]
